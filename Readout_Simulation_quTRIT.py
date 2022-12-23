@@ -10,20 +10,20 @@ from scipy.optimize import curve_fit
 # PARAMETER SPEC
 
 # plot histogram R_eg vs counts
-PLOT_HIST = True
+PLOT_HIST = False
 # Colormap to compare R_eg and R_ef
 COLORMAP = False
 # plot templates of e and g vs time
 PLOT_TEMP = False
 # plot amp_phase_sep vs driving frequency
-PLOT_AMP_PHASE_Sep = False
+PLOT_AMP_PHASE_Sep = True
 # sweep driving frequency
-FREQ_SWEEP = False
-NUMBER_TRAJECTORIES = 5
+FREQ_SWEEP = True
+NUMBER_TRAJECTORIES = 0
 
 USE_Orthogonal_temps = False
-d3_plot = True
-d2_plot = True
+d3_plot = False
+d2_plot = False
 
 t_start = time.time()
 HAMILTONIAN = 'dispersive'  # 'normal'
@@ -137,6 +137,7 @@ p_steady_gs = []
 x_steady_es = []
 p_steady_es = []
 
+#forloop to sweep over different driving frequencies if FREQ_SWEEP = True, otherwise simply one element in wds
 for wd in wds:
     w_rot_r = wd
     print(f'Finished driving frequency loop: {list(wds).index(wd)}/{len(wds)}')
@@ -149,7 +150,7 @@ for wd in wds:
     # drive term of Hamiltonian is independet of choice of Ham -> wd is adapted in the if clause and access in that
     # shouldn't make any difference
 
-    # for wd in wds:
+
 
     def H_drive1_coeff(t, args):
         return np.exp(1j * ((wd - w_rot_r) * t) + phi)
@@ -216,6 +217,10 @@ for wd in wds:
 
 
     elif HAMILTONIAN == 'dispersive':
+
+        #qubit Hamiltonian is set to 0 because I can use different frequencies in the transformation for the qubit
+        # corresponds to U = exp(-i \sum wq_n n|n><n|), where wq_n is the qubit frequency of each level
+        #even if I use the same driving freq for every level I get the same plot with the weird oscillation
 
         H0q = (wq + Lambda_1 - w_rot_q) * e_op * 0 + (2 * (wq - w_rot_q) + alpha + Lambda_2) * f_op * 0
 
