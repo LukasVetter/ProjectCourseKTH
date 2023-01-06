@@ -2,6 +2,7 @@ import numpy as np
 import qutip as qt
 import matplotlib.pyplot as plt
 import scipy
+from scipy import integrate
 from scipy.stats import norm
 
 
@@ -52,11 +53,14 @@ def calc_measurment_results(H, psi0, ts, sc_ops, ntraj, nsubsteps, method):
     m = 0.5 * (I + 1j * Q)
     return m
 
-def calc_R(m, temp_i, temp_j):
-    theta_ij = 0.5 * (norm_funk(temp_i)**2 - norm_funk(temp_j)**2) # -> has to be a number use norm  sum (temp_excited * signal)
-    p_i = scalar_product(m, temp_i)
-    p_j = scalar_product(m, temp_j)
-    return p_i - p_j - theta_ij
+def calc_R(m, temp_i, temp_j, NEW=False):
+    if NEW:
+        theta_ij = 0.5 * (norm_funk(temp_i)**2 - norm_funk(temp_j)**2) # -> has to be a number use norm  sum (temp_excited * signal)
+        p_i = scalar_product(m, temp_i)
+        p_j = scalar_product(m, temp_j)
+        return p_i - p_j - theta_ij
+    else:
+        return scalar_product(m, temp_i)
 
 def calc_R_new(m, temp, temp2):
     return scalar_product(m, temp)
@@ -99,33 +103,43 @@ def gaussian_unnorm(x, mu, std, a):
     return a * np.exp(-1 / 2 * (x - mu) ** 2 / std ** 2)
 
 
-def fidelity(mu_i, sigma_i, mu_j, sigma_j):
+def fidelity(mu_i, sigma_i, a_i, mu_j, sigma_j, a_j):
     '''
     fidelity of readout between state |i> and |j>
     :params: mu_k expectation value, sigma_k standard deviation
     '''
-    eps_i = error_wrong_state(mu_i, sigma_i)
-    eps_j = error_wrong_state(mu_j, sigma_j)
-
+    #eps_i = error_wrong_state(mu_i, sigma_i, a_i, mu_j, sigma_j, a_j)
+    #eps_j = error_wrong_state(mu_j, sigma_j, a_j, mu_i, sigma_j, a_j)
+    normalization_i = 1 / (sigma_i * np.sqrt(2 * np.pi) * a_i)
+    normalization_j = 1 / (sigma_j * np.sqrt(2 * np.pi) * a_j)
+    if mu_i < mu_j:
+        f_i = lambda x, mu_i, sigma_i, a_i: normalization_i * gaussian_unnorm(x, mu_i, sigma_i, a_i)
+        f_j = lambda x, mu_j, sigma_j, a_j: normalization_j * gaussian_unnorm(x, mu_j, sigma_j, a_j)
+        A_i = integrate.quad(f_i, -np.inf, (mu_i + mu_j) / 2, args=(mu_i, sigma_i, a_i))
+        A_j = integrate.quad(f_j, (mu_i + mu_j) / 2, np.inf, args=(mu_j, sigma_j, a_j))
+        eps_i = (1 - A_i[0]) / 2
+        eps_j = (1 - A_j[0]) / 2
+    else:
+        print('error in fidelity function')
+        eps_i = 1
+        eps_j = 1
     return 1 - (eps_i + eps_j) / 2
 
-def error_wrong_state(mu, sigma):
-    '''
-    probability of assigning the wrong state given a qubit in state i
-    '''
-    x = np.abs(mu) / (sigma * np.sqrt(2))
-    eps = (1 - scipy.special.erf(x)) / 2
-    return eps
+def error_wrong_state(mu_i, sigma_i, mu_j, sigma_j):
+    x = abs(mu_i) / (sigma_i * np.sqrt(2))
+    return (1 - scipy.special.erf(x))/2
 
-def x_analytic(ts, wr, w_rot_r, kappa, chi, u):
-    delta = wr - w_rot_r
+def x_analytic(ts, wr, wd, kappa, chi, u):
+    delta = wr - wd
     #return 2 * u / 2 * 1 / (kappa**2 + 4*(delta+chi)**2) * ((2*delta + kappa + 2*chi)*(1 - np.exp(-ts*kappa/2) * np.cos(ts*(delta + chi)))
     #    + (2*delta - kappa + 2*chi) * np.exp(-ts*kappa/2) * np.sin(ts*(delta + chi)))
     return 2 * u / 2 * np.exp(-ts*kappa/2) * (-2 * np.exp(ts*kappa/2) * (delta + chi) + 2 * (delta+chi) * np.cos(ts*(delta + chi))
         + kappa * np.sin(ts*(delta + chi))) / (kappa**2 + 4*(delta+chi)**2)
 
-def p_analytic(ts, wr, w_rot_r, kappa, chi, u):
-    delta = wr - w_rot_r
+def p_analytic(ts, wr, wd, kappa, chi, u):
+    delta = wr - wd
+
+    #delta = wr - wd
     #return 2 * u / 2 * 1 / (kappa ** 2 + 4 * (delta + chi) ** 2) * (
     #            (-2 * delta + kappa - 2 * chi) * (1 - np.exp(-ts * kappa / 2) * np.cos(ts * (delta + chi)))
     #            + (2 * delta + kappa + 2 * chi) * np.exp(-ts * kappa / 2) * np.sin(ts * (delta + chi)))
@@ -133,11 +147,38 @@ def p_analytic(ts, wr, w_rot_r, kappa, chi, u):
         - 2 * (delta+chi) * np.sin(ts*(delta + chi))) / (kappa**2 + 4*(delta+chi)**2)
 
 
-def template_analytic(ts, wr, w_rot_r, kappa, chi, u):
+def template_analytic(ts, wr, wd, kappa, chi, u):
     #chi and u are depending on the state that the system was prepared in
-    x = x_analytic(ts, wr, w_rot_r, kappa, chi, u)
-    p = p_analytic(ts, wr, w_rot_r, kappa, chi, u)
+    x = x_analytic(ts, wr, wd, kappa, chi, u)
+    p = p_analytic(ts, wr, wd, kappa, chi, u)
     return np.sqrt(kappa)*(x + 1j * p)
 
 def x_anal(t, a, b, c, d, e):
     return a + np.exp(b*t)*(c*np.cos(d*t) + e*np.sin(d*t))
+
+
+def sigma_calc(P, R_1s, R_2s):
+    return np.sqrt((np.sum(np.array([(R_1 - P[0]) ** 2 for R_1 in R_1s])) + np.sum(
+        np.array([(R_2 - P[1]) ** 2 for R_2 in R_2s]))) / (len(R_1s)-1))
+
+def norm_vec(v):
+    norm = np.sqrt(v[0]**2 + v[1]**2)
+    return v / norm
+
+
+def rotated_basis(A, B, C, sigma_A, sigma_B, sigma_C, x):
+    basis_1 = B - C + (A - B) / 2
+    basis_2 = np.array([-basis_1[1], basis_1[0]])
+
+    basis_change_matrix = np.array([basis_1.tolist(), basis_2.tolist()]).T
+    A_prime = A + x * sigma_A * norm_vec(B - A)
+    B_prime = B - x * sigma_B * norm_vec(B - A)
+    C_prime_plus = C + x * sigma_C * norm_vec(B - A) + basis_1
+    C_prime_minus = C - x * sigma_C * norm_vec(B - A) + basis_1
+    print(C_prime_minus)
+    heuristic_A = -np.sqrt((A_prime[0] - C_prime_plus[0]) ** 2 + (A_prime[1] - C_prime_plus[1]) ** 2) + np.sqrt(
+        (A[0] - C_prime_plus[0]) ** 2 + (A[1] - C_prime_plus[1]) ** 2)
+    heuristic_B = - np.sqrt((B_prime[0] - C_prime_minus[0]) ** 2 + (B_prime[1] - C_prime_minus[1]) ** 2) + np.sqrt(
+        (B[0] - C_prime_minus[0]) ** 2 + (B[1] - C_prime_minus[1]) ** 2)
+
+    return basis_change_matrix, heuristic_A, heuristic_B
